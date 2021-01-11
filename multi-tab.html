@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <button id="new_tab">新建Tab</button>
+    <input id="input" type="number" />
+    <button id="send">发送</button>
+    <ol id="message"></ol>
+    <script>
+      (function () {
+        let windowId;
+
+        if (window.name && window.name.match(/^tab-\d+$/)) {
+          windowId = parseInt(window.name.slice(4));
+        } else {
+          const nextWindowId = parseInt(localStorage.getItem("next_window_id"));
+          if (nextWindowId) {
+            windowId = nextWindowId;
+            localStorage.setItem("next_window_id", nextWindowId + 1);
+          } else {
+            windowId = 0;
+            localStorage.setItem("next_window_id", 1);
+          }
+
+          window.name = `tab-${windowId}`;
+        }
+
+        window.id = windowId;
+        document.title = windowId;
+
+        try {
+          const windowIds = JSON.parse(localStorage.getItem(`window_ids`));
+          if (!windowIds.includes(windowId)) {
+            localStorage.setItem(
+              "window_ids",
+              JSON.stringify([...windowIds, windowId])
+            );
+          }
+        } catch (e) {
+          localStorage.setItem("window_ids", JSON.stringify([windowId]));
+        }
+
+        function open(url) {
+          const nextWindowId = parseInt(localStorage.getItem("next_window_id"));
+          localStorage.setItem("next_window_id", nextWindowId + 1);
+          window.open(url, `tab-${nextWindowId}`);
+        }
+
+        document.querySelector("#new_tab").addEventListener("click", () => {
+          open(location.href);
+        });
+
+        const bc = new BroadcastChannel("multi_tab");
+
+        bc.onmessage = (e) => {
+          const { from, to, payload } = JSON.parse(e.data);
+          if (to === windowId || to === -1) {
+            const li = document.createElement("li");
+            li.innerHTML = `message from ${from}: ${payload}`;
+            document.querySelector("#message").appendChild(li);
+          }
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+          bc.postMessage(
+            JSON.stringify({
+              from: windowId,
+              to: -1,
+              payload: `window ${windowId} is loaded`,
+            })
+          );
+        });
+
+        document.querySelector("#send").addEventListener("click", () => {
+          bc.postMessage(
+            JSON.stringify({
+              from: windowId,
+              to: document.querySelector("#input").valueAsNumber,
+            })
+          );
+        });
+
+        window.addEventListener("beforeunload", () => {
+          window.name = "";
+          const windowIds = JSON.parse(localStorage.getItem(`window_ids`));
+          const remainWindowIds = windowIds.filter((id) => id !== windowId);
+          localStorage.setItem(`window_ids`, JSON.stringify(remainWindowIds));
+          if (remainWindowIds.length === 0) {
+            localStorage.setItem(`next_window_id`, 0);
+          }
+          bc.postMessage(
+            JSON.stringify({
+              from: windowId,
+              to: -1,
+              payload: `window ${windowId} is closed`,
+            })
+          );
+          bc.close();
+        });
+      })();
+    </script>
+  </body>
+</html>
